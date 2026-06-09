@@ -1,0 +1,9 @@
+include LICENSE
+include README.md
+recursive-include holiday_sync *.html
+recursive-include holiday_sync *.txt
+recursive-include holiday_sync *.js
+recursive-include holiday_sync *.css
+recursive-include holiday_sync *.png
+recursive-include holiday_sync *.svg
+recursive-include holiday_sync *.json

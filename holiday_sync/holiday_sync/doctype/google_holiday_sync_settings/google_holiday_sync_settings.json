@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "creation": "2026-06-09 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "language",
+  "auto_sync_on_jan_1",
+  "overwrite_existing_holiday_list"
+ ],
+ "fields": [
+  {
+   "default": "en",
+   "fieldname": "language",
+   "fieldtype": "Select",
+   "label": "Language",
+   "options": "en\nes\nfr\npt\nde\nit"
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_sync_on_jan_1",
+   "fieldtype": "Check",
+   "label": "Auto Sync on Jan 1st"
+  },
+  {
+   "default": "1",
+   "fieldname": "overwrite_existing_holiday_list",
+   "fieldtype": "Check",
+   "label": "Overwrite Existing Holiday List"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Holiday Sync",
+ "name": "Google Holiday Sync Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "states": []
+}

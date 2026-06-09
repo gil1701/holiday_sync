@@ -1,0 +1,17 @@
+[build-system]
+requires = ["flit_core >=3.4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "holiday_sync"
+version = "1.0.0"
+description = "Syncs holidays from Google Calendar into ERPNext Holiday Lists based on company country"
+authors = [{name = "Antigravity", email = "antigravity@google.com"}]
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.25.0"
+]
+
+[tool.bench.frappe-dependencies]
+frappe = ">=16.0.0-dev,<17.0.0-dev"
+erpnext = ">=16.0.0-dev,<17.0.0-dev"
