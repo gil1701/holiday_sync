@@ -1,1 +1,1 @@
-# Holiday Sync module initializer
+# Holiday Sync app package initializer

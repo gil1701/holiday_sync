@@ -1,6 +1,6 @@
 import unittest
 import frappe
-from holiday_sync.holiday_sync.utils import get_calendar_id, parse_ics_holidays
+from holiday_sync.utils import get_calendar_id, parse_ics_holidays
 
 class TestHolidaySync(unittest.TestCase):
     def test_calendar_id_construction(self):

@@ -12,7 +12,7 @@ frappe.ui.form.on('Company', {
                     }
                 ], function(values) {
                     frappe.call({
-                        method: 'holiday_sync.holiday_sync.utils.sync_company_holidays',
+                        method: 'holiday_sync.utils.sync_company_holidays',
                         args: {
                             company: frm.doc.name,
                             year: values.year

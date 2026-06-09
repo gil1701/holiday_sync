@@ -19,6 +19,6 @@ doctype_js = {
 # ----------------
 scheduler_events = {
     "daily": [
-        "holiday_sync.holiday_sync.utils.sync_all_companies_holidays"
+        "holiday_sync.utils.sync_all_companies_holidays"
     ]
 }
