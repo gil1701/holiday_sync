@@ -33,39 +33,70 @@ def get_logger():
         # Try to get the site path. If we are in a request context, frappe.get_site_path() works.
         # Otherwise, we might be in a scheduler/CLI context.
         site_path = None
-        if hasattr(frappe, "get_site_path"):
-            try:
-                # frappe.get_site_path() usually works if a site is localed.
-                site_path = frappe.get_site_path()
-            except Exception:
-                pass
         
-        if not site_path and hasattr(frappe, "local") and hasattr(frappe.local, "site"):
-            # Fallback for some versions
-            site_path = os.path.join("sites", frappe.local.site)
+        # Log to confirm we entered get_logger
+        print(f"DEBUG: Initializing logger for {logger_name}")
+
+        try:
+            if hasattr(frappe, "local") and hasattr(frappe.local, "site"):
+                site_path = frappe.get_site_path()
+        except Exception as e:
+            print(f"DEBUG: frappe.get_site_path() failed: {str(e)}")
+            pass
+        
+        if not site_path:
+            # Try searching in current directory structure for a 'sites' folder
+            # Common in frappe-bench
+            if os.path.exists("sites"):
+                # If we are in frappe-bench root
+                # Note: We need to know WHICH site. If there is only one site, we can guess.
+                # However, without frappe.local.site, it's risky.
+                pass 
+            elif os.path.exists("../../sites"):
+                # If we are in apps/holiday_sync/holiday_sync
+                pass
+
+        # Try another way to get site path if frappe.local.site is missing
+        if not site_path and hasattr(frappe, "get_site_path"):
+             try:
+                 # In some CLI contexts, it might work even without .local.site if passed via --site
+                 site_path = frappe.get_site_path()
+             except:
+                 pass
 
         if site_path:
             log_dir = os.path.join(site_path, "logs")
             if not os.path.exists(log_dir):
-                os.makedirs(log_dir)
+                os.makedirs(log_dir, exist_ok=True)
             
             log_file = os.path.join(log_dir, f"{logger_name}.log")
             fh = logging.FileHandler(log_file)
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(formatter)
             log.addHandler(fh)
+            print(f"DEBUG: Logging to {log_file}")
         else:
-            # Last resort: log to current directory if we can't find site path
-            # (less ideal but better than no logs)
+            # Fallback for log file in a writable temporary directory if site_path is not found
+            import tempfile
+            temp_log = os.path.join(tempfile.gettempdir(), f"{logger_name}_emergency.log")
             try:
-                fh = logging.FileHandler(f"{logger_name}_fallback.log")
+                # Test permissions if file exists
+                fh = logging.FileHandler(temp_log)
                 fh.setLevel(logging.DEBUG)
                 fh.setFormatter(formatter)
                 log.addHandler(fh)
+                print(f"DEBUG: Site path not found. Logging to emergency log: {temp_log}")
             except Exception:
-                pass
-    except Exception:
-        # Fallback if frappe is not fully initialized or site path is unavailable
+                # Last resort: fallback in current directory
+                try:
+                    fh = logging.FileHandler(f"{logger_name}_fallback.log")
+                    fh.setLevel(logging.DEBUG)
+                    fh.setFormatter(formatter)
+                    log.addHandler(fh)
+                except:
+                    pass
+    except Exception as e:
+        print(f"DEBUG: Critical error in get_logger: {str(e)}")
         pass
 
     return log
@@ -249,6 +280,13 @@ def sync_holidays(company, year, silent=True):
     """
     log = get_logger()
     log.info(f"Syncing holidays for Company: {company}, Year: {year}")
+    
+    # 0. Check if DB is connected
+    try:
+        frappe.db.connect()
+    except Exception as e:
+        log.warning(f"Note: frappe.db.connect() failed (might be already connected): {str(e)}")
+
     # 1. Get company's country name
     try:
         country_name = frappe.db.get_value("Company", company, "country")
@@ -386,7 +424,14 @@ def sync_all_companies_holidays():
         year = datetime.datetime.now().year
         companies = frappe.get_all("Company", fields=["name"])
         log.info(f"Syncing holidays for {len(companies)} companies for year {year}...")
-        
+    
+        # Ensure DB connection for scheduled task
+        try:
+            if not frappe.db:
+                frappe.connect()
+        except Exception as e:
+            log.warning(f"Could not ensure DB connection in sync_all_companies_holidays: {str(e)}")
+    
         success_count = 0
         fail_count = 0
         
