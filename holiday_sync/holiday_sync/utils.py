@@ -1,11 +1,74 @@
+import os
 import datetime
 import urllib.parse
 import urllib.request
+import logging
 import frappe
-from frappe import _, logger
+from frappe import _
 
 def get_logger():
-    return logger.get_logger("holiday_sync", with_standard_handlers=True)
+    """
+    Returns a logger that writes to both the console and a file in the site's logs directory.
+    """
+    logger_name = "holiday_sync"
+    log = logging.getLogger(logger_name)
+    
+    # If the logger already has handlers, don't add more (prevents duplicate logs)
+    if log.handlers:
+        return log
+
+    log.setLevel(logging.DEBUG)
+    
+    # Create formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    # Console Handler (Stdout)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+
+    # File Handler
+    try:
+        # Try to get the site path. If we are in a request context, frappe.get_site_path() works.
+        # Otherwise, we might be in a scheduler/CLI context.
+        site_path = None
+        if hasattr(frappe, "get_site_path"):
+            try:
+                # frappe.get_site_path() usually works if a site is localed.
+                site_path = frappe.get_site_path()
+            except Exception:
+                pass
+        
+        if not site_path and hasattr(frappe, "local") and hasattr(frappe.local, "site"):
+            # Fallback for some versions
+            site_path = os.path.join("sites", frappe.local.site)
+
+        if site_path:
+            log_dir = os.path.join(site_path, "logs")
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            
+            log_file = os.path.join(log_dir, f"{logger_name}.log")
+            fh = logging.FileHandler(log_file)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(formatter)
+            log.addHandler(fh)
+        else:
+            # Last resort: log to current directory if we can't find site path
+            # (less ideal but better than no logs)
+            try:
+                fh = logging.FileHandler(f"{logger_name}_fallback.log")
+                fh.setLevel(logging.DEBUG)
+                fh.setFormatter(formatter)
+                log.addHandler(fh)
+            except Exception:
+                pass
+    except Exception:
+        # Fallback if frappe is not fully initialized or site path is unavailable
+        pass
+
+    return log
 
 # Exceptions list for Google Calendar ID
 CALENDAR_EXCEPTIONS = {
@@ -187,7 +250,13 @@ def sync_holidays(company, year, silent=True):
     log = get_logger()
     log.info(f"Syncing holidays for Company: {company}, Year: {year}")
     # 1. Get company's country name
-    country_name = frappe.db.get_value("Company", company, "country")
+    try:
+        country_name = frappe.db.get_value("Company", company, "country")
+    except Exception as e:
+        log.error(f"Error fetching country for company {company}: {str(e)}")
+        if silent: return None
+        frappe.throw(_("Error fetching country for company {0}").format(company))
+
     if not country_name:
         log.warning(f"Company {company} does not have a country set.")
         if silent:
@@ -278,9 +347,15 @@ def sync_holidays(company, year, silent=True):
     log.info(f"Saved Holiday List {holiday_list_name}")
     
     # 6. Set as default holiday list for the company
-    if frappe.db.get_value("Company", company, "default_holiday_list") != holiday_list_name:
-        log.info(f"Setting {holiday_list_name} as default for company {company}")
-        frappe.db.set_value("Company", company, "default_holiday_list", holiday_list_name, update_modified=False)
+    try:
+        if frappe.db.get_value("Company", company, "default_holiday_list") != holiday_list_name:
+            log.info(f"Setting {holiday_list_name} as default for company {company}")
+            frappe.db.set_value("Company", company, "default_holiday_list", holiday_list_name, update_modified=False)
+            frappe.db.commit()
+    except Exception as e:
+        log.error(f"Error setting default holiday list for {company}: {str(e)}")
+        # Don't fail the whole sync if only setting the default fails
+        pass
     
     return holiday_list_name
 
@@ -307,27 +382,31 @@ def sync_all_companies_holidays():
     Run sync for all companies for the current year (called by scheduler).
     """
     log = get_logger()
-    year = datetime.datetime.now().year
-    companies = frappe.get_all("Company", fields=["name"])
-    log.info(f"Syncing holidays for {len(companies)} companies for year {year}...")
-    
-    success_count = 0
-    fail_count = 0
-    
-    for comp in companies:
-        company_name = comp["name"]
-        try:
-            res = sync_holidays(company_name, year, silent=True)
-            if res:
-                success_count += 1
-            else:
+    try:
+        year = datetime.datetime.now().year
+        companies = frappe.get_all("Company", fields=["name"])
+        log.info(f"Syncing holidays for {len(companies)} companies for year {year}...")
+        
+        success_count = 0
+        fail_count = 0
+        
+        for comp in companies:
+            company_name = comp["name"]
+            try:
+                res = sync_holidays(company_name, year, silent=True)
+                if res:
+                    success_count += 1
+                else:
+                    fail_count += 1
+            except Exception as e:
                 fail_count += 1
-        except Exception as e:
-            fail_count += 1
-            log.error(f"Failed to sync holidays for company {company_name} on Scheduler Event: {str(e)}")
-            frappe.log_error(
-                message=f"Failed to sync holidays for company {company_name} on Scheduler Event: {str(e)}",
-                title="Google Holiday Sync Scheduled Job Failed"
-            )
-            
-    log.info(f"Scheduled sync complete. Success: {success_count}, Failed: {fail_count}")
+                log.error(f"Failed to sync holidays for company {company_name} on Scheduler Event: {str(e)}")
+                frappe.log_error(
+                    message=f"Failed to sync holidays for company {company_name} on Scheduler Event: {str(e)}",
+                    title="Google Holiday Sync Scheduled Job Failed"
+                )
+                
+        log.info(f"Scheduled sync complete. Success: {success_count}, Failed: {fail_count}")
+    except Exception as e:
+        log.critical(f"Critical error in scheduled task sync_all_companies_holidays: {str(e)}")
+        frappe.log_error(message=frappe.get_traceback(), title="Holiday Sync Critical Failure")
