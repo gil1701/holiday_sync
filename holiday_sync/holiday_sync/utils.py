@@ -83,7 +83,9 @@ def get_calendar_id(country_code, lang="en"):
     Construct Google Calendar ID based on country code.
     Standard format: {lang}.{country_code_or_name}.official#holiday@group.v.calendar.google.com
     """
+    print(f"Getting calendar ID for country code: {country_code}")
     code = country_code.lower().strip()
+    print(f"Resolved code: {code}")
     
     # ISO-2 corrections for Google Calendar
     if code == "gb":
@@ -92,13 +94,16 @@ def get_calendar_id(country_code, lang="en"):
         code = "sa"
         
     country_identifier = CALENDAR_EXCEPTIONS.get(code, code)
+    print(f"Country Identifier: {country_identifier}")
     return f"{lang}.{country_identifier}.official#holiday@group.v.calendar.google.com"
 
 def fetch_raw_ics(calendar_id):
     """
     Fetches the raw .ics text content of the public Google Calendar.
     """
+    print(f"Fetching ICS for calendar ID: {calendar_id}")
     encoded_id = urllib.parse.quote(calendar_id)
+    print(f"Encoded ID: {encoded_id}")
     url = f"https://calendar.google.com/calendar/ical/{encoded_id}/public/basic.ics"
     
     try:
@@ -106,18 +111,19 @@ def fetch_raw_ics(calendar_id):
             url,
             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         )
-        with urllib.request.urlopen(req, timeout=15) as response:
+        print(f"Request URL: {req.get_full_url()}")
+        with urllib.request.urlopen(req, timeout=10) as response:
             return response.read().decode('utf-8')
     except Exception as e:
-        raise frappe.ValidationError(
-            _("Could not fetch holidays from Google Calendar. Calendar ID: {0} (URL: {1}). Error: {2}").format(calendar_id, url, str(e))
-        )
+        frappe.log_error(message=f"Failed to fetch ICS from {url}: {str(e)}", title="Holiday Sync Fetch Error")
+        raise e
 
 def parse_ics_holidays(ics_text, target_year=None):
     """
     Parses ICS content and returns list of dictionaries containing 'date' (YYYY-MM-DD) and 'summary'.
     Filters by target_year if specified.
     """
+    print(f"Parsing ICS for year: {target_year}")
     unfolded_lines = []
     for line in ics_text.splitlines():
         if not line:
@@ -168,14 +174,16 @@ def parse_ics_holidays(ics_text, target_year=None):
     deduplicated.sort(key=lambda x: x["date"])
     return deduplicated
 
-def sync_holidays(company, year, silent=False):
+def sync_holidays(company, year, silent=True):
     """
     Core function to sync holidays for a company and year.
     Creates the Holiday List if it doesn't exist, updates it if it does,
     and links it to the Company defaults.
     """
+    print(f"Syncing holidays for Company: {company}, Year: {year}")
     # 1. Get company's country name
     country_name = frappe.db.get_value("Company", company, "country")
+    print(f"Country Name: {country_name}")
     if not country_name:
         if silent:
             return None
@@ -183,10 +191,13 @@ def sync_holidays(company, year, silent=False):
         
     # 2. Resolve country code
     country_code = frappe.db.get_value("Country", country_name, "code")
+    print(f"Country Code: {country_code}")
     code = country_code.lower().strip() if country_code else None
+    print(f"Resolved Code: {code}")
     
     if not code:
-        code = COUNTRY_NAME_TO_CODE.get(country_name.lower().strip())
+        # Try fuzzy match or more options if needed
+        pass
         
     if not code:
         if silent:
@@ -200,12 +211,16 @@ def sync_holidays(company, year, silent=False):
     settings_name = "Google Holiday Sync Settings"
     if frappe.db.exists("DocType", settings_name):
         settings = frappe.get_single(settings_name)
+        print(f"Settings: {settings}")
         lang = settings.language or "en"
+        print(f"Language: {lang}")
         
     calendar_id = get_calendar_id(code, lang)
+    print(f"Calendar ID: {calendar_id}")
     
     try:
         ics_text = fetch_raw_ics(calendar_id)
+        print(f"Fetched ICS Text: {ics_text[:100]}...")
     except Exception as e:
         if lang != "en":
             # Fallback to English
@@ -231,6 +246,7 @@ def sync_holidays(company, year, silent=False):
             
     # 4. Parse events
     holidays_data = parse_ics_holidays(ics_text, target_year=year)
+    print(f"Parsed Holidays: {len(holidays_data)}")
     if not holidays_data:
         if not silent:
             frappe.msgprint(_("No holidays found in Google Calendar for country code {0} and year {1}.").format(code, year))
@@ -238,6 +254,7 @@ def sync_holidays(company, year, silent=False):
         
     # 5. Create or update Holiday List
     holiday_list_name = f"Holidays - {company} - {year}"
+    print(f"Holiday List Name: {holiday_list_name}")
     
     if frappe.db.exists("Holiday List", holiday_list_name):
         holiday_list = frappe.get_doc("Holiday List", holiday_list_name)
@@ -259,8 +276,8 @@ def sync_holidays(company, year, silent=False):
     frappe.db.commit()
     
     # 6. Set as default holiday list for the company
-    frappe.db.set_value("Company", company, "default_holiday_list", holiday_list_name)
-    frappe.db.commit()
+    if frappe.db.get_value("Company", company, "default_holiday_list") != holiday_list_name:
+        frappe.db.set_value("Company", company, "default_holiday_list", holiday_list_name, update_modified=False)
     
     return holiday_list_name
 
@@ -288,14 +305,17 @@ def sync_all_companies_holidays():
     """
     year = datetime.datetime.now().year
     companies = frappe.get_all("Company", fields=["name"])
+    print(f"Syncing holidays for {len(companies)} companies for year {year}...")
     
     success_count = 0
     fail_count = 0
     
     for comp in companies:
         company_name = comp["name"]
+        print(f"Syncing holidays for company: {company_name}")
         try:
             res = sync_holidays(company_name, year, silent=True)
+            print(f"Sync result for {company_name}: {res}")
             if res:
                 success_count += 1
             else:

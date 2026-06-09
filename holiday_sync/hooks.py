@@ -18,9 +18,7 @@ doctype_js = {
 # Scheduler Events
 # ----------------
 scheduler_events = {
-    "cron": {
-        "0 0 1 1 *": [
-            "holiday_sync.holiday_sync.utils.sync_all_companies_holidays"
-        ]
-    }
+    "daily": [
+        "holiday_sync.holiday_sync.utils.sync_all_companies_holidays"
+    ]
 }
